@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casino Royale - VIP Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="glass-header">
+            <h1 class="gradient-text">Casino Royale VIP</h1>
+            <div class="round-controls">
+                <span id="currentRoundDisplay" class="round-display">No Active Round</span>
+                <button id="btnStartRound" class="btn-glow">Start New Round</button>
+                <button id="btnClearState" class="btn-glow btn-danger" onclick="clearGameState()">Clear Game State</button>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <!-- Table View -->
+            <section class="table-section">
+                <div class="casino-table">
+                    <!-- Seats generated via JS -->
+                    <div id="seatsContainer" class="seats-grid"></div>
+                </div>
+            </section>
+
+            <!-- Control Panels -->
+            <aside class="controls-panel">
+                <div class="card glass-card">
+                    <h2>Players</h2>
+                    <form id="formAddPlayer">
+                        <input type="text" id="playerName" placeholder="Player Name" required>
+                        <button type="submit" class="btn-secondary">Add Player</button>
+                    </form>
+                </div>
+
+                <div class="card glass-card">
+                    <h2>Seat Management</h2>
+                    <form id="formAssignSeat">
+                        <select id="selectSeat" required>
+                            <option value="">Select Seat</option>
+                        </select>
+                        <select id="selectPlayer" required>
+                            <option value="">Select Player</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                        <button type="submit" class="btn-primary">Assign Seat</button>
+                    </form>
+                </div>
+                
+
+            </aside>
+        </main>
+        
+        <section class="history-section">
+            <div class="card glass-card history-card">
+                <h2>Game History</h2>
+                <div class="table-wrapper">
+                    <table id="historyTable">
+                        <thead>
+                            <tr id="historyHeaders">
+                                <th>Round</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                        </tbody>
+                        <tfoot id="historyFooter">
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Betting Dialog -->
+    <dialog id="betDialog" class="glass-card bet-dialog">
+        <div class="dialog-header">
+            <h2 id="betDialogTitle">Place Bet</h2>
+            <button class="btn-close" onclick="closeBetDialog()">&times;</button>
+        </div>
+        <div class="dialog-body">
+            <div class="bet-presets dialog-presets">
+                <button onclick="placeDialogBet(5000)">$5K</button>
+                <button onclick="placeDialogBet(10000)">$10K</button>
+                <button onclick="placeDialogBet(25000)">$25K</button>
+                <button onclick="placeDialogBet(50000)">$50K</button>
+                <button onclick="placeDialogBet(100000)">$100K</button>
+            </div>
+            <div class="custom-bet-container">
+                <input type="text" inputmode="numeric" id="dialogBetCustom" placeholder="Custom $" class="bet-input-small">
+                <button class="btn-bet-custom" onclick="submitDialogCustomBet()">Bet</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Toast Notification System -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/script.js"></script>
+</body>
+</html>

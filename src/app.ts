@@ -11,8 +11,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+import path from 'path';
+
 // Serve static UI frontend
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '../public')));
 
 app.use('/api/players', playerRoutes);
 app.use('/api/seats', seatRoutes);
@@ -24,7 +26,7 @@ app.use('/api/history', historyRoutes);
 
 
 //health check
-app.get('/', (req: Request, res: Response) => {
+app.get('/api', (req: Request, res: Response) => {
     res.json({ message: 'Welcome to the Casino Bets API' });
 });
 

@@ -6,7 +6,7 @@ export const getHistory = async (req: Request, res: Response, next: NextFunction
         const query = `
             SELECT
                 r.id        AS round_id,
-                DATE_FORMAT(r.created_at, '%H:%i') AS time,
+                DATE_FORMAT(DATE_ADD(r.created_at, INTERVAL '5:30' HOUR_MINUTE), '%H:%i') AS time,
                 p.name      AS player_name,
                 b.amount    AS amount
             FROM rounds r

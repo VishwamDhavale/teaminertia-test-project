@@ -11,6 +11,7 @@ const pool: mysql.Pool = mysql.createPool({
     database: process.env.DB_NAME || 'casino_bets',
     waitForConnections: true,
     connectionLimit: 10,
+    timezone: '+05:30',
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined
 });
 

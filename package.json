@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
     "dev:init": "npm run db:init && npm run dev",
+    "build": "tsc",
     "start": "ts-node src/server.ts",
     "db:init": "ts-node scripts/db-init.ts",
     "test": "jest",

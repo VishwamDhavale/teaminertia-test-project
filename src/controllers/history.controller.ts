@@ -10,7 +10,11 @@ export const getHistory = async (req: Request, res: Response, next: NextFunction
                 p.name      AS player_name,
                 b.amount    AS amount
             FROM rounds r
-            CROSS JOIN players p
+            CROSS JOIN (
+                SELECT DISTINCT pl.id, pl.name
+                FROM players pl
+                INNER JOIN bets bt ON bt.player_id = pl.id
+            ) p
             LEFT JOIN bets b ON b.round_id = r.id AND b.player_id = p.id
             ORDER BY r.id ASC, p.id ASC
         `;

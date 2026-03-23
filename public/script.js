@@ -39,13 +39,46 @@ async function fetchAPI(url, options = {}) {
     }
 }
 
+// --- Snapshot & Rollback Helpers ---
+function takeSnapshot() {
+    return {
+        players: JSON.parse(JSON.stringify(players)),
+        seats: JSON.parse(JSON.stringify(seats)),
+        currentRound
+    };
+}
+
+function restoreSnapshot(snap) {
+    players = snap.players;
+    seats = snap.seats;
+    currentRound = snap.currentRound;
+    updateSelects();
+    renderSeats();
+    renderHistoryFromServer();
+    updateRoundDisplay();
+}
+
+function updateRoundDisplay() {
+    const el = document.getElementById('currentRoundDisplay');
+    if (currentRound) {
+        el.innerText = `Current Round: #${currentRound}`;
+        document.body.classList.add('round-active');
+    } else {
+        el.innerText = 'No Active Round';
+        document.body.classList.remove('round-active');
+    }
+}
+
+// --- Data Fetching ---
 async function refreshData() {
     try {
-        players = await fetchAPI('/players');
-        seats = await fetchAPI('/seats');
+        [players, seats] = await Promise.all([
+            fetchAPI('/players'),
+            fetchAPI('/seats')
+        ]);
         updateSelects();
         renderSeats();
-        renderHistory();
+        renderHistoryFromServer();
     } catch(e) {}
 }
 
@@ -88,7 +121,8 @@ function renderSeats() {
     });
 }
 
-async function renderHistory() {
+// --- History Rendering ---
+async function renderHistoryFromServer() {
     try {
         const [historyRes, summaryRes] = await Promise.all([
             fetch(API_BASE + '/history').then(r => r.json()),
@@ -100,82 +134,150 @@ async function renderHistory() {
         const { players: histPlayers, rows } = historyRes;
         if (!currentRound && rows && rows.length > 0) {
             currentRound = rows[rows.length - 1].round_id;
-            document.getElementById('currentRoundDisplay').innerText = `Current Round: #${currentRound}`;
-            document.body.classList.add('round-active');
+            updateRoundDisplay();
         }
         const { totals, round_count } = summaryRes;
 
-        const headers = `<th>Round</th><th>Time</th>` + histPlayers.map(p => `<th>${p}</th>`).join('');
-        document.getElementById('historyHeaders').innerHTML = headers;
-
-        let bodyHtml = '';
-        rows.forEach(r => {
-            const cells = histPlayers.map(p => {
-                const amount = r.bets[p];
-                return `<td>${amount ? '$'+amount.toLocaleString() : '-'}</td>`;
-            }).join('');
-            bodyHtml += `<tr><td>#${r.round_id}</td><td>${r.time}</td>${cells}</tr>`;
-        });
-        document.getElementById('historyBody').innerHTML = bodyHtml;
-
-        const footCells = histPlayers.map(p => {
-            const tot = totals[p] || 0;
-            return `<td>$${tot.toLocaleString()}</td>`;
-        }).join('');
-        document.getElementById('historyFooter').innerHTML = `<tr><td colspan="2">TOTALS (${round_count} Rounds)</td>${footCells}</tr>`;
+        renderHistoryDOM(histPlayers, rows, totals, round_count);
         
     } catch(e) {}
 }
 
+function renderHistoryDOM(histPlayers, rows, totals, round_count) {
+    const headers = `<th>Round</th><th>Time</th>` + histPlayers.map(p => `<th>${p}</th>`).join('');
+    document.getElementById('historyHeaders').innerHTML = headers;
+
+    let bodyHtml = '';
+    rows.forEach(r => {
+        const cells = histPlayers.map(p => {
+            const amount = r.bets[p];
+            return `<td>${amount ? '$'+amount.toLocaleString() : '-'}</td>`;
+        }).join('');
+        bodyHtml += `<tr><td>#${r.round_id}</td><td>${r.time}</td>${cells}</tr>`;
+    });
+    document.getElementById('historyBody').innerHTML = bodyHtml;
+
+    const footCells = histPlayers.map(p => {
+        const tot = totals[p] || 0;
+        return `<td>$${tot.toLocaleString()}</td>`;
+    }).join('');
+    document.getElementById('historyFooter').innerHTML = `<tr><td colspan="2">TOTALS (${round_count} Rounds)</td>${footCells}</tr>`;
+}
+
+function clearHistoryDOM() {
+    document.getElementById('historyHeaders').innerHTML = '<th>Round</th><th>Time</th>';
+    document.getElementById('historyBody').innerHTML = '';
+    document.getElementById('historyFooter').innerHTML = '';
+}
+
+// =============================================
+// OPTIMISTIC UI — All user actions below
+// =============================================
+
+// --- Add Player ---
 formAddPlayer.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = document.getElementById('playerName').value;
+    const nameInput = document.getElementById('playerName');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    
     if (players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
         showToast(`Player ${name} already exists`, 'error');
         return;
     }
-    await fetchAPI('/players', { method: 'POST', body: JSON.stringify({ name }) });
+
+    // Optimistic: add with temp ID
+    const tempId = -Date.now();
+    players.push({ id: tempId, name });
+    updateSelects();
+    nameInput.value = '';
     showToast(`Player ${name} added!`);
-    document.getElementById('playerName').value = '';
-    refreshData();
+
+    try {
+        const created = await fetchAPI('/players', { method: 'POST', body: JSON.stringify({ name }) });
+        // Replace temp ID with real ID
+        const idx = players.findIndex(p => p.id === tempId);
+        if (idx !== -1) players[idx] = created;
+        updateSelects();
+    } catch {
+        // Rollback
+        players = players.filter(p => p.id !== tempId);
+        updateSelects();
+    }
 });
 
+// --- Assign Seat ---
 formAssignSeat.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const seatId = document.getElementById('selectSeat').value;
-    const playerId = document.getElementById('selectPlayer').value;
-    await fetchAPI(`/seats/${seatId}/assign`, { method: 'PATCH', body: JSON.stringify({ player_id: parseInt(playerId) }) });
+    const seatNumber = parseInt(document.getElementById('selectSeat').value);
+    const playerId = parseInt(document.getElementById('selectPlayer').value);
+    if (!seatNumber || !playerId) return;
+
+    const player = players.find(p => p.id === playerId);
+    if (!player) return;
+
+    const snap = takeSnapshot();
+
+    // Optimistic: update seat locally
+    const seatIdx = seats.findIndex(s => s.seat_number === seatNumber);
+    if (seatIdx !== -1) {
+        seats[seatIdx].player = { id: player.id, name: player.name };
+    }
+    updateSelects();
+    renderSeats();
     showToast(`Seat assigned successfully`);
-    refreshData();
+
+    try {
+        await fetchAPI(`/seats/${seatNumber}/assign`, { method: 'PATCH', body: JSON.stringify({ player_id: playerId }) });
+    } catch {
+        restoreSnapshot(snap);
+    }
 });
 
+// --- Remove Seat ---
 window.removeSeat = async (seatNumber) => {
-    await fetchAPI(`/seats/${seatNumber}/remove`, { method: 'PATCH' });
+    const snap = takeSnapshot();
+
+    // Optimistic: clear seat locally
+    const seatIdx = seats.findIndex(s => s.seat_number === seatNumber);
+    if (seatIdx !== -1) {
+        seats[seatIdx].player = null;
+    }
+    updateSelects();
+    renderSeats();
     showToast(`Player removed from Seat ${seatNumber}`);
-    refreshData();
+
+    try {
+        await fetchAPI(`/seats/${seatNumber}/remove`, { method: 'PATCH' });
+    } catch {
+        restoreSnapshot(snap);
+    }
 };
 
+// --- Start Round ---
 btnStartRound.addEventListener('click', async () => {
     const seatedCount = seats.filter(s => s.player).length;
     if (seatedCount < 2) {
         showToast('At least 2 players must be seated to start a round!', 'error');
         return;
     }
-    const round = await fetchAPI('/rounds', { method: 'POST' });
-    currentRound = round.id;
-    document.body.classList.add('round-active');
-    document.getElementById('currentRoundDisplay').innerText = `Current Round: #${round.id}`;
-    showToast(`Round #${round.id} Started!`, 'success');
+    try {
+        const round = await fetchAPI('/rounds', { method: 'POST' });
+        currentRound = round.id;
+        updateRoundDisplay();
+        showToast(`Round #${round.id} Started!`, 'success');
+    } catch {}
 });
 
+// --- Place Bet ---
 window.placeBet = async (playerId, amount) => {
     if (!currentRound) {
         showToast('Please start a round first!', 'error');
         throw new Error('No active round');
     }
     await fetchAPI(`/rounds/${currentRound}/bets`, { method: 'POST', body: JSON.stringify({ player_id: playerId, amount }) });
-    showToast(`Bet of $${amount} placed successfully!`);
-    renderHistory();
+    showToast(`Bet of $${amount.toLocaleString()} placed successfully!`);
+    renderHistoryFromServer();
 };
 
 window.submitCustomBet = (playerId) => {
@@ -208,9 +310,11 @@ window.placeDialogBet = async (amount) => {
         if (!confirm(`Are you sure you want to place a bet of $${amount.toLocaleString()} for ${playerName}?`)) {
             return;
         }
+        // Close dialog immediately (optimistic)
+        const pid = currentBetPlayerId;
+        closeBetDialog();
         try {
-            await placeBet(currentBetPlayerId, amount);
-            closeBetDialog();
+            await placeBet(pid, amount);
         } catch (e) {}
     }
 };
@@ -228,21 +332,37 @@ window.submitDialogCustomBet = async () => {
         if (!confirm(`Are you sure you want to place a bet of $${amount.toLocaleString()} for ${playerName}?`)) {
             return;
         }
+        // Close dialog immediately (optimistic)
+        const pid = currentBetPlayerId;
+        closeBetDialog();
         try {
-            await placeBet(currentBetPlayerId, amount);
-            closeBetDialog();
+            await placeBet(pid, amount);
         } catch (e) {}
     }
 };
 
+// --- Clear Game State (BIGGEST optimistic win) ---
 window.clearGameState = async () => {
     if (!confirm("Are you sure you want to completely clear the game state? This will delete all history, rounds, and seat assignments, but keep the players.")) {
         return;
     }
-    await fetchAPI('/history', { method: 'DELETE' });
+
+    const snap = takeSnapshot();
+
+    // Optimistic: instantly clear everything in UI
+    seats.forEach(s => s.player = null);
     currentRound = null;
-    document.body.classList.remove('round-active');
-    document.getElementById('currentRoundDisplay').innerText = 'No Active Round';
+    updateRoundDisplay();
+    updateSelects();
+    renderSeats();
+    clearHistoryDOM();
     showToast('Game state cleared successfully!', 'success');
-    refreshData();
+
+    try {
+        await fetchAPI('/history', { method: 'DELETE' });
+    } catch {
+        // Rollback on failure
+        restoreSnapshot(snap);
+        showToast('Failed to clear game state — reverted', 'error');
+    }
 };
